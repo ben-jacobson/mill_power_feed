@@ -335,7 +335,7 @@ void loop() {
     }  
 
     if (mode == MODE_BOUNCE || mode == MODE_RETRACT)       // stop the stepper from continuing past limit switch     
-        stepper.setAcceleration(5000);
+        stepper.setAcceleration(STEPPER_MAX_ACCEL * 5);     // TODO - see if we can do something mechanically so that the limits don't require such harsh conditions.
     else 
         stepper.setAcceleration(STEPPER_MAX_ACCEL);
 

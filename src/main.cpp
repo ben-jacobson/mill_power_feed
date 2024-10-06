@@ -62,7 +62,7 @@ int cycle_check = 0;  // used so that the speed isn't being read every cycle, th
 // Stepper speeds
 #define STEPPER_MIN_SPEED 2 
 #define STEPPER_MAX_SPEED 900
-#define STEPPER_MAX_ACCEL 1000
+#define STEPPER_MAX_ACCEL 600
 #define STEPPER_RAPID 2000
 
 int speed_pot_reading, last_speed_pot_reading; 
@@ -334,10 +334,11 @@ void loop() {
         stop_button_debounce = false;
     }  
 
-    if (mode == MODE_BOUNCE || mode == MODE_RETRACT)       // stop the stepper from continuing past limit switch     
-        stepper.setAcceleration(STEPPER_MAX_ACCEL * 5);     // TODO - see if we can do something mechanically so that the limits don't require such harsh conditions.
+    /*if (mode == MODE_BOUNCE || mode == MODE_RETRACT)       // stop the stepper from continuing past limit switch     
+        stepper.setAcceleration(STEPPER_MAX_ACCEL * 2);     
     else 
         stepper.setAcceleration(STEPPER_MAX_ACCEL);
+    */ // found this to be unnecessary with proximity switches as the sensor detects the limit a few mm away, likely to be necessary if using switch based limits
 
     if (move_direction == LEFT && motor_running) {
         stepper.moveTo(1000000);          

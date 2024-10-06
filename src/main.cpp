@@ -310,7 +310,6 @@ void loop() {
         rapid_button_debounce = false;
     }      
 
-
     if (digitalRead(START_BUTTON_PIN) == LOW && start_button_debounce == false) {
         #ifdef DEBUG  
             Serial.println(F("Start Button Pressed"));

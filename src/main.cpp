@@ -1,10 +1,10 @@
 #include <Arduino.h>
 #include <AccelStepper.h>
 
-// Debug flag, comment out to disable all serial output, speeding up the code 
-//#define DEBUG
+// Debug flag, comment out when deploying stable coad. Will disable all serial output and speeds up execution
+#define DEBUG 
 
-// Button pins
+// Button pins - order on PCB is Stop, Start, Rapid, Mode, Direction
 #define DIRECTION_BUTTON_PIN 6   // Pin for direction button
 #define MODE_BUTTON_PIN 7        // Pin for mode select button
 #define RAPID_BUTTON_PIN 8         // Pin for rapid mode 
@@ -13,7 +13,10 @@
 #define LIMIT_LEFT_PIN 12       // Limit switch left
 #define LIMIT_RIGHT_PIN 11       // Limit switch right
 
-// order on PCB is Stop, Start, Rapid, Mode, Direction
+
+// eSTOP - Important - the NC side of the switch is used to disconnect power. However since the PSUs have some charge left in the caps, 
+// it doesn't halt exection or stop motors right away. The solution is to connect a Digital pin to the the NO side of the eStop. trigger an interrupt to halt the motor
+#define ESTOP_BUTTON_PIN 5
 
 // Debouncing
 bool direction_button_debounce = false; 
@@ -50,17 +53,17 @@ bool retracting = false;
 AccelStepper stepper(AccelStepper::DRIVER, STEPPER_PULSE_PIN, STEPPER_DIR_PIN);
 bool motor_running;
 
-// speeds
+// Speed settings
 #define SPEED_POT A6              // Analog pin for speed potentiometer
 #define POT_HYSTERSIS 5           // a predefined value to prevent continuous reading of the pot due to spurious noise, will ignore the noise and only read a new value if the pot moves by x or more increments.
 #define CYCLE_SKIP_SPEED_CHECK 1000
 int cycle_check = 0;  // used so that the speed isn't being read every cycle, this prevents the user from updating the speed so frequently that the stepper wigs out.
 
-#define STEPPER_MIN_SPEED 2
+// Stepper speeds
+#define STEPPER_MIN_SPEED 2 
 #define STEPPER_MAX_SPEED 900
 #define STEPPER_MAX_ACCEL 1000
 #define STEPPER_RAPID 2000
-
 
 int speed_pot_reading, last_speed_pot_reading; 
 
@@ -68,6 +71,14 @@ void clear_mode_status_leds(void) {
     digitalWrite(LED_STANDARD_MODE, LOW);
     digitalWrite(LED_RETRACT_MODE, LOW);
     digitalWrite(LED_BOUNCE_MODE, LOW);
+}
+
+void stop_motor(void) {
+    if (motor_running) {    
+        stepper.disableOutputs();
+        stepper.stop();  
+        motor_running = false; 
+    }
 }
 
 void setup() {
@@ -115,9 +126,10 @@ void setup() {
     stepper.setAcceleration(STEPPER_MAX_ACCEL);
 
     // for safety
-    motor_running = false;
-    stepper.disableOutputs();
-    stepper.stop();   
+    stop_motor();
+
+    // set up the interrupt for emergency stop
+    //attachInterrupt(digitalPinToInterrupt(ESTOP_BUTTON_PIN), stop_motor, LOW); // have not yet implemented in hardware, will disable for now
     
     #ifdef DEBUG
         Serial.println("Program start");
@@ -152,9 +164,7 @@ void loop() {
 
         if (move_direction == LEFT && motor_running == true) {
             if (mode == MODE_STANDARD) {
-                stepper.disableOutputs();
-                stepper.stop();        
-                motor_running = false; 
+                stop_motor();
             }
             if (mode == MODE_RETRACT) {
                 if (retracting == false) {
@@ -163,10 +173,7 @@ void loop() {
                 }
                 else {
                     retracting = false;   
-                    motor_running = false;     
-
-                    stepper.disableOutputs();
-                    stepper.stop();        
+                    stop_motor();       
                     move_direction = RIGHT;    // reset direction back to original
                 }                
             }
@@ -184,9 +191,7 @@ void loop() {
    
         if (move_direction == RIGHT && motor_running == true) {
             if (mode == MODE_STANDARD) {
-                stepper.disableOutputs();
-                stepper.stop();          
-                motor_running = false;                     
+                stop_motor();                   
             }
             if (mode == MODE_RETRACT) {
                 if (retracting == false) {
@@ -195,10 +200,7 @@ void loop() {
                 }
                 else {
                     retracting = false;   
-                    motor_running = false;       
-                    
-                    stepper.disableOutputs();
-                    stepper.stop();  
+                    stop_motor();
                     move_direction = LEFT;    // reset direction back to original and repeat.
                 }  
             }
@@ -326,9 +328,7 @@ void loop() {
         #ifdef DEBUG 
             Serial.println(F("Stop Button Pressed"));
         #endif
-        stepper.disableOutputs();
-        stepper.stop();           
-        motor_running = false; 
+        stop_motor();
         stop_button_debounce = true;
     }  
     if (digitalRead(STOP_BUTTON_PIN) == HIGH) {   

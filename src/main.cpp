@@ -2,7 +2,7 @@
 #include <AccelStepper.h>
 
 // Debug flag, comment out when deploying stable coad. Will disable all serial output and speeds up execution
-#define DEBUG 
+//#define DEBUG 
 
 // Button pins - order on PCB is Stop, Start, Rapid, Mode, Direction
 #define DIRECTION_BUTTON_PIN 6   // Pin for direction button
@@ -16,7 +16,7 @@
 
 // eSTOP - Important - the NC side of the switch is used to disconnect power. However since the PSUs have some charge left in the caps, 
 // it doesn't halt exection or stop motors right away. The solution is to connect a Digital pin to the the NO side of the eStop. trigger an interrupt to halt the motor
-#define ESTOP_BUTTON_PIN 5
+#define ESTOP_BUTTON_PIN 5 // note that pin 5 doesnt support interupt, need to re-arrange in hardware and retry implementation. 
 
 // Debouncing
 bool direction_button_debounce = false; 
@@ -44,6 +44,7 @@ byte move_direction;
 #define MODE_BOUNCE 2  
 byte mode;
 bool retracting = false; 
+bool rapid_movement = false; 
 
 // Stepper driver
 #define STEPPER_PULSE_PIN 2
@@ -62,7 +63,7 @@ int cycle_check = 0;  // used so that the speed isn't being read every cycle, th
 // Stepper speeds
 #define STEPPER_MIN_SPEED 2 
 #define STEPPER_MAX_SPEED 900
-#define STEPPER_MAX_ACCEL 600
+#define STEPPER_MAX_ACCEL 1000
 #define STEPPER_RAPID 2000
 
 int speed_pot_reading, last_speed_pot_reading; 
@@ -73,11 +74,16 @@ void clear_mode_status_leds(void) {
     digitalWrite(LED_BOUNCE_MODE, LOW);
 }
 
+void stop_motor_emergency(void) {
+    stepper.disableOutputs(); // doing this before stop will mean the system stops without decelleration
+    stepper.stop(); 
+    motor_running = false;  
+}
+
 void stop_motor(void) {
     if (motor_running) {    
-        stepper.disableOutputs();
-        stepper.stop();  
-        motor_running = false; 
+        stepper.stop(); 
+        motor_running = false;  
     }
 }
 
@@ -129,7 +135,7 @@ void setup() {
     stop_motor();
 
     // set up the interrupt for emergency stop
-    //attachInterrupt(digitalPinToInterrupt(ESTOP_BUTTON_PIN), stop_motor, LOW); // have not yet implemented in hardware, will disable for now
+    //attachInterrupt(digitalPinToInterrupt(ESTOP_BUTTON_PIN), stop_motor_emergency, LOW); // have not yet implemented in hardware, will disable for now
     
     #ifdef DEBUG
         Serial.println("Program start");
@@ -141,7 +147,7 @@ void loop() {
 
     cycle_check++; 
 
-    if (cycle_check > CYCLE_SKIP_SPEED_CHECK && digitalRead(RAPID_BUTTON_PIN) != LOW) { // only allow speed change occasionally, also ignore if the rapid button is being pressed.
+    if (cycle_check > CYCLE_SKIP_SPEED_CHECK && rapid_movement == false) { // only allow speed change occasionally, also ignore if the rapid button is being pressed.
         speed_pot_reading = map(analogRead(SPEED_POT), 1024, 0, STEPPER_MIN_SPEED, STEPPER_MAX_SPEED); // if wired correctly the value of the pot will be zero ohms read at the left most position. Simply flip the first 1024, and 0 to read 0, 1024.
 
         if (speed_pot_reading < last_speed_pot_reading - POT_HYSTERSIS || speed_pot_reading > last_speed_pot_reading + POT_HYSTERSIS) {
@@ -163,6 +169,12 @@ void loop() {
         #endif
 
         if (move_direction == LEFT && motor_running == true) {
+
+            if (rapid_movement == true) {
+                // very easy to shoot past limit switches if you rapid into a limit switch
+                stop_motor_emergency();
+            }
+
             if (mode == MODE_STANDARD) {
                 stop_motor();
             }
@@ -190,6 +202,11 @@ void loop() {
         #endif      
    
         if (move_direction == RIGHT && motor_running == true) {
+            if (rapid_movement == true) {
+                // very easy to shoot past limit switches if you rapid into a limit switch
+                stop_motor_emergency();
+            }
+
             if (mode == MODE_STANDARD) {
                 stop_motor();                   
             }
@@ -304,10 +321,12 @@ void loop() {
         #endif
         stepper.setMaxSpeed(STEPPER_RAPID);
         rapid_button_debounce = true;
+        rapid_movement = true; 
     }  
     if (digitalRead(RAPID_BUTTON_PIN) == HIGH) {     
         stepper.setMaxSpeed(last_speed_pot_reading);    
         rapid_button_debounce = false;
+        rapid_movement = false;
     }      
 
     if (digitalRead(START_BUTTON_PIN) == LOW && start_button_debounce == false) {
@@ -332,7 +351,7 @@ void loop() {
     }  
     if (digitalRead(STOP_BUTTON_PIN) == HIGH) {   
         stop_button_debounce = false;
-    }  
+    }
 
     /*if (mode == MODE_BOUNCE || mode == MODE_RETRACT)       // stop the stepper from continuing past limit switch     
         stepper.setAcceleration(STEPPER_MAX_ACCEL * 2);     
